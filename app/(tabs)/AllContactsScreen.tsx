@@ -1,4 +1,4 @@
-// screens/index.tsx
+// screens/AllContactsScreen.tsx
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
