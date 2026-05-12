@@ -128,11 +128,46 @@ function ClearX({ value, onClear }: ClearXProps): ReactElement | null {
 // ── Main Screen ───────────────────────────────────────────────────────────────
 export default function ContactDetailScreen(): ReactElement {
   const router = useRouter();
-  const params = useLocalSearchParams<{ data: string }>();
-  const contact: Contact = JSON.parse(params.data || '{}');
+  const params = useLocalSearchParams<{ data?: string | string[] }>();
+
+  const rawData = Array.isArray(params.data) ? params.data[0] : params.data;
+  let contact: Contact | null = null;
+
+  if (rawData) {
+    try {
+      const parsed = JSON.parse(rawData);
+      if (parsed && typeof parsed === 'object') {
+        contact = parsed as Contact;
+      }
+    } catch {
+      contact = null;
+    }
+  }
+
+  if (!contact) {
+    return (
+      <SafeAreaView style={S.container}>
+        <View style={S.header}>
+          <TouchableOpacity onPress={() => router.back()} style={S.headerBtn}>
+            <Ionicons name="chevron-back" size={18} color={THEME} />
+            <Text style={S.headerBtnText}>Back</Text>
+          </TouchableOpacity>
+          <Text style={S.headerTitle}>Contact</Text>
+          <View style={S.headerRight} />
+        </View>
+
+        <View style={[S.scroll, { flex: 1, justifyContent: 'center', alignItems: 'center' }]}>
+          <Text style={{ color: '#FF3B30', fontSize: 16 }}>Invalid contact data.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const contactId = typeof contact.id === 'string' ? contact.id.trim() : '';
 
   const [editMode, setEditMode] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
+  const [deleting, setDeleting] = useState<boolean>(false);
 
   const [form, setForm] = useState({
     firstName: contact.firstName || '',
@@ -183,13 +218,18 @@ export default function ContactDetailScreen(): ReactElement {
   };
 
   const handleSave = useCallback(async (): Promise<void> => {
+    if (!contactId) {
+      Alert.alert('Error', 'Cannot update this contact because its ID is missing.');
+      return;
+    }
+
     if (!form.firstName.trim()) {
       Alert.alert('Required', 'First name cannot be empty.');
       return;
     }
     setSaving(true);
     try {
-      await updateDoc(doc(db, 'contacts', contact.id), {
+      await updateDoc(doc(db, 'contacts', contactId), {
         ...form,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
@@ -208,29 +248,41 @@ export default function ContactDetailScreen(): ReactElement {
     } finally {
       setSaving(false);
     }
-  }, [form, dobString, contact.id]);
+  }, [form, dobString, contactId]);
 
-  const handleDelete = (): void => {
+  const handleDelete = useCallback((): void => {
+    if (deleting) return;
+
+    if (!contactId) {
+      Alert.alert('Error', 'Cannot delete this contact because its ID is missing.');
+      return;
+    }
+
+    const fullName = `${contact.firstName || ''} ${contact.lastName || ''}`.trim() || 'this contact';
+
     Alert.alert(
       'Delete Contact',
-      `Delete ${contact.firstName} ${contact.lastName}?`,
+      `Delete ${fullName}?`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            setDeleting(true);
             try {
-              await deleteDoc(doc(db, 'contacts', contact.id));
-              router.back();
+              await deleteDoc(doc(db, 'contacts', contactId));
+              router.replace('/');
             } catch {
               Alert.alert('Error', 'Could not delete contact.');
+            } finally {
+              setDeleting(false);
             }
           },
         },
       ],
     );
-  };
+  }, [contact.firstName, contact.lastName, contactId, deleting, router]);
 
   // ── VIEW MODE ──────────────────────────────────────────────────────────────
   if (!editMode) {
@@ -247,8 +299,12 @@ export default function ContactDetailScreen(): ReactElement {
             <TouchableOpacity onPress={() => setEditMode(true)} style={S.headerIconBtn}>
               <Ionicons name="pencil" size={20} color={THEME} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleDelete} style={S.headerIconBtn}>
-              <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+            <TouchableOpacity onPress={handleDelete} style={S.headerIconBtn} disabled={deleting}>
+              {deleting ? (
+                <ActivityIndicator size="small" color="#FF3B30" />
+              ) : (
+                <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+              )}
             </TouchableOpacity>
           </View>
         </View>

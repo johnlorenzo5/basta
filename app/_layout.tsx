@@ -15,7 +15,7 @@ export const unstable_settings = {
 export type RootStackParamList = {
   '(tabs)': undefined;
   'add-contact': undefined;
-  'contact-detail': { contact: any };
+  'contact-detail': { data: string };
   'modal': undefined;
 };
 

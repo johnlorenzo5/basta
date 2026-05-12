@@ -56,6 +56,14 @@ function calcAge(dob: string): string {
   return age >= 0 ? String(age) : '';
 }
 
+function normalizeNamePart(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function buildNameKey(firstName: string, lastName: string): string {
+  return `${normalizeNamePart(firstName)} ${normalizeNamePart(lastName)}`.trim();
+}
+
 // ── Picker Modal types ─────────────────────────────────────────────────────────
 interface PickerModalProps {
   visible: boolean;
@@ -176,10 +184,20 @@ export default function AddContactScreen(): ReactElement {
   };
 
   const handleSave = useCallback(async (): Promise<void> => {
-    if (!form.firstName.trim()) {
+    const firstName = form.firstName.trim().replace(/\s+/g, ' ');
+    const lastName = form.lastName.trim().replace(/\s+/g, ' ');
+    const nameKey = buildNameKey(firstName, lastName);
+
+    if (!firstName) {
       Alert.alert('Required', 'Please enter a first name.');
       return;
     }
+
+    if (!nameKey) {
+      Alert.alert('Required', 'Please enter a valid contact name.');
+      return;
+    }
+
     if (!form.phone.trim() && !form.email.trim()) {
       Alert.alert('Required', 'Please enter a phone number or email.');
       return;
@@ -197,26 +215,34 @@ export default function AddContactScreen(): ReactElement {
           return;
         }
       }
-      // Duplicate check — full name
-      const nameSnap = await getDocs(
-        query(
-          collection(db, 'contacts'),
-          where('firstName', '==', form.firstName.trim()),
-          where('lastName', '==', form.lastName.trim()),
-        ),
-      );
-      if (!nameSnap.empty) {
+
+      // Duplicate check — full name (case/spacing insensitive)
+      const allContactsSnap = await getDocs(collection(db, 'contacts'));
+      const duplicateNameExists = allContactsSnap.docs.some((docSnap) => {
+        const existing = docSnap.data() as {
+          firstName?: string;
+          lastName?: string;
+          nameKey?: string;
+        };
+        const existingNameKey =
+          typeof existing.nameKey === 'string' && existing.nameKey.trim()
+            ? existing.nameKey
+            : buildNameKey(existing.firstName ?? '', existing.lastName ?? '');
+        return existingNameKey === nameKey;
+      });
+
+      if (duplicateNameExists) {
         Alert.alert(
           'Duplicate',
-          `${form.firstName} ${form.lastName} is already in your contacts.`,
+          `${firstName}${lastName ? ` ${lastName}` : ''} is already in your contacts.`,
         );
         setSaving(false);
         return;
       }
 
       await addDoc(collection(db, 'contacts'), {
-        firstName: form.firstName.trim(),
-        lastName: form.lastName.trim(),
+        firstName,
+        lastName,
         phone: form.phone.trim(),
         email: form.email.trim(),
         company: form.company.trim(),
@@ -225,6 +251,7 @@ export default function AddContactScreen(): ReactElement {
         street: form.street.trim(),
         dob: dobString,
         photoUrl: form.photoUrl,
+        nameKey,
         createdAt: serverTimestamp(),
       });
       router.back();
